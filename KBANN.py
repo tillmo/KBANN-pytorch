@@ -1,7 +1,8 @@
 import os
-import tensorflow as tf
 import numpy as np
 from sklearn import mixture
+import torch as pt
+from torch import nn
 
 DEFAULT_WEIGHT = 4.0
 
@@ -29,7 +30,7 @@ def cluster_weights(links, threshold):
         lowest_bic = np.infty
         bic = []
         for n_components in range(2, n):
-            gmm = mixture.GMM(n_components=n_components, covariance_type='full')
+            gmm = mixture.GaussianMixture(n_components=n_components, covariance_type='full')
             gmm.fit(weights)
             # Bayesian information criterion
             bic.append(gmm.bic(weights))
@@ -80,8 +81,8 @@ def load_data(filename):
 
     return np.array(X), np.transpose(np.array([y])), features
 
-class Predicate:
-    """Predicate object
+class Literal:
+    """Literal object
 
     Attributes:
         name: the name of predicate
@@ -126,7 +127,7 @@ def load_rules(filename):
     ruleset = []
     for line in file:
         tokens = line.split(':')
-        head = Predicate(cleanse(tokens[0]))
+        head = Literal(cleanse(tokens[0]))
         body = []
         for obj in tokens[1].split(','):
             obj = cleanse(obj)
@@ -134,7 +135,7 @@ def load_rules(filename):
             if obj.startswith('not'):
                 negated = True
                 obj = obj.replace('not', '')
-            predicate = Predicate(cleanse(obj), negated=negated)
+            predicate = Literal(cleanse(obj), negated=negated)
             body.append(predicate)
         rule = Rule(head, body)
         ruleset.append(rule)
@@ -176,7 +177,7 @@ def rewrite_rules(ruleset):
     for rule in ruleset[:]:
         if dict[rule.head.name] > 1:
             # Create a new intermediate consequent
-            new_predicate = Predicate(rule.head.name + str(i))
+            new_predicate = Literal(rule.head.name + str(i))
             # Create two new rules for the consequence and antecedents
             rewritten_rules.append(Rule(rule.head, [new_predicate]))
             rewritten_rules.append(Rule(new_predicate, rule.body))
@@ -448,11 +449,12 @@ def simplify_rules(rules):
     return rules
 
 def save(rules, filepath):
-    with open(filepath, 'wb') as f:
+    with open(filepath, 'w') as f:
         for row in rules:
             f.write(repr(str(row)) + '\n')
 
-class KBANN:
+
+class KBANN(nn.Module):
     """Knowledge base artificial neural network
 
     Create KBANN network on the tensorflow framework.
@@ -467,95 +469,62 @@ class KBANN:
         learning_rate: learning rate for optimization
     """
 
-    def set_weights(self, input_weights, fixed=False):
-        if fixed:
-            fixed_tensors = []
-            for w in input_weights:
-                tensor = tf.constant(w, dtype=tf.float32)
-                fixed_tensors.append(tensor)
-            return fixed_tensors
-        else:
-            tensors = []
-            for w in input_weights:
-                #tensor = tf.Variable(tf.random_uniform([len(w), len(w[0])], -1, 1), dtype=tf.float32)
-                tensor = tf.Variable(w + 0.1 * np.random.rand(len(w), len(w[0])), dtype=tf.float32)
-                tensors.append(tensor)
-            return tensors
-
-    def set_biases(self, input_biases):
-        tensors = []
-        for b in input_biases:
-            #tensor = tf.Variable(tf.random_uniform([len(b), len(b[0])], -1, 1), dtype=tf.float32)
-            tensor = tf.Variable(b + 0.1 * np.random.rand(1, len(b)), dtype=tf.float32)
-            tensors.append(tensor)
-        return tensors
-
-    def __init__(self, weights, biases, X, y, learning_rate):
+    def __init__(self, weights, biases, fix_weights=False):
         """Set network parameters"""
 
-        self.weights = self.set_weights(weights)
-        self.biases = self.set_biases(biases)
+        super().__init__()
+        self.w = nn.ParameterList([nn.Parameter(w + 0.1 * pt.rand((len(w), len(w[0]))), requires_grad=not fix_weights) for w in weights])
+        self.b = nn.ParameterList([nn.Parameter(b + 0.1 * pt.rand((1, len(b))), requires_grad=True) for b in biases])
         self.num_layers = len(weights)
-        self.input_data = []
-        self.input_mask = []
-        self.learning_rate = learning_rate
-        for x in X:
-            self.input_data.append(tf.constant(x, dtype=tf.float32))
-            if x.shape[1] > 0:
-                self.input_mask.append(True)
-                print('masked')
-            else:
-                self.input_mask.append(False)
+        self.dropout = nn.Dropout(p=0.1)
 
-        self.targets = tf.constant(y, dtype=tf.float32)
 
-    def propagate_forward(self):
+    def forward(self, input_data, input_mask=None, dropout=True):
         """Implements the forward propagation"""
 
-        activations = [tf.sigmoid(tf.matmul(self.input_data[0], self.weights[0]) - self.biases[0])]
+        activations = [pt.sigmoid(pt.matmul(input_data, self.w[0]) - self.b[0])]
         for i in range(1, self.num_layers):
-            if self.input_mask[i]:
-                input_tensor = tf.concat(1, [activations[-1], self.input_data[i]])
+            if input_mask and input_mask[i]:
+                input_tensor = pt.concat([activations[-1], input_data[i]],dim=1)
             else:
                 input_tensor = activations[-1]
-            activation = tf.sigmoid(tf.matmul(input_tensor, self.weights[i]) - self.biases[i])
+            if dropout:
+                input_tensor = self.dropout(input_tensor)
+            activation = pt.sigmoid(pt.matmul(input_tensor, self.w[i]) - self.b[i])
             activations.append(activation)
         return activations[-1]
 
-    def propagate_forward_with_dropout(self):
-        """Implements the forward propagation"""
+    @property
+    def weights(self):
+        return [w.detach().numpy() for w in self.w]
 
-        activations = [tf.sigmoid(tf.matmul(self.input_data[0], self.weights[0]) - self.biases[0])]
-
-        for i in range(1, self.num_layers):
-            if self.input_mask[i]:
-                input_tensor = tf.concat(1, [activations[-1], self.input_data[i]])
-            else:
-                input_tensor = activations[-1]
-            dropout_layer = tf.nn.dropout(input_tensor, 0.8)
-            activation = tf.sigmoid(tf.matmul(dropout_layer, self.weights[i]) - self.biases[i])
-            activations.append(activation)
-        return activations[-1]
-
-    def compute_loss(self, logits):
-        return tf.reduce_mean(-self.targets * tf.log(logits) - (1.0 - self.targets) * tf.log(1.0 - logits))
-
-    def train(self, cost):
-        optimizer = tf.train.GradientDescentOptimizer(self.learning_rate)
-        return optimizer.minimize(cost)
+    @property
+    def biases(self):
+        return [b.detach().numpy() for b in self.b]
 
 def display(arrays):
     for array in arrays:
         print(array)
 
-if __name__ == "__main__":
+def train_model(model, X, y, training_epochs):
+    criterion = nn.BCELoss()
+    optimizer = pt.optim.SGD(model.parameters(), lr=0.1)
 
+    # Refine rules
+    for epoch in range(training_epochs):
+        optimizer.zero_grad()
+        pred = model(X)
+        l = criterion(pred, y)
+        l.backward()
+        optimizer.step()
+        print('Epoch %d: Loss = %.9f' % (epoch, l))
+
+
+def main():
     CURRENT_DIRECTOR = os.getcwd()
 
     # Initial parameters
-    training_epochs = 2000000
-    display_step = 10000
-    learning_rate = 0.1
+    training_epochs = 2000
 
     # Load training data
     data_file_path = CURRENT_DIRECTOR + '/Datasets/student.txt'
@@ -566,6 +535,7 @@ if __name__ == "__main__":
     ruleset = load_rules(rule_file_path)
     ruleset = rewrite_rules(ruleset)
     weights, biases, layers = rule_to_network(ruleset)
+
     display(layers)
     print('---------------------')
     # Add input features not referred by the rule set
@@ -577,65 +547,31 @@ if __name__ == "__main__":
     display(layers)
 
     # Pre-process input data
-    X = preprocess_data(X, feature_names, layers)
+    X = pt.tensor(preprocess_data(X, feature_names, layers)[0])
+    y = pt.tensor(y.astype(float))
 
     print('Parameters 0:')
     display(weights)
     display(biases)
 
     # Construct a training model
-    model = KBANN(weights, biases, X, y, learning_rate) # tensorflow model
+    model = KBANN(list(map(pt.tensor, weights)), list(map(pt.tensor, biases)))
+    train_model(model, X, y, training_epochs)
 
-    # Launch the graph
-    with tf.Session() as session:
+    weights, biases, cluster_indices = eliminate_weights(model.weights, model.biases)
 
-        # Initialize all variables
-        session.run(tf.initialize_all_variables())
+    # Create second model with fixed weights - train just biases
+    model = KBANN(list(map(pt.tensor, weights)), list(map(pt.tensor, biases)), fix_weights=True)
+    train_model(model, X, y, training_epochs)
 
-        logits = model.propagate_forward_with_dropout()
-        loss = model.compute_loss(logits)
-        train_op = model.train(loss)
-        weights = session.run(model.weights)
-        biases = session.run(model.biases)
+    # Translate network to rules
+    ruleset = network_to_rule(weights, biases, cluster_indices, layers)
+    print('Parameters 4:')
+    display(weights)
+    display(biases)
 
-        # Refine rules
-        for epoch in range(training_epochs):
-            session.run(train_op)
-            if epoch % display_step == 0:
-                loss_value = session.run(loss)
-                print('Epoch %d: Loss = %.9f' % (epoch / display_step, loss_value))
-        print('Rule Refinement Finished!')
+    save(ruleset, CURRENT_DIRECTOR + '/Datasets/extracted_rules.txt')
+    print('Rule Extraction Finished!')
 
-        weights = session.run(model.weights)
-        biases = session.run(model.biases)
-
-        print('Parameters 2:')
-        display(weights)
-        display(biases)
-
-        weights, biases, cluster_indices = eliminate_weights(weights, biases)
-        print('Parameters 3:')
-        display(weights)
-        display(biases)
-
-        model.set_weights(weights, fixed=True)
-        model.set_biases(biases)
-        logits = model.propagate_forward()
-        loss = model.compute_loss(logits)
-        train_op = model.train(loss)
-
-        # Optimize bias
-        for epoch in range(1000000):
-            _, loss_value = session.run([train_op, loss])
-            if epoch % display_step == 0:
-                print('Epoch %d: Loss = %.9f' % (epoch / display_step, loss_value))
-        biases = session.run(model.biases)
-
-        # Translate network to rules
-        ruleset = network_to_rule(weights, biases, cluster_indices, layers)
-        print('Parameters 4:')
-        display(weights)
-        display(biases)
-
-        # save(ruleset, CURRENT_DIRECTOR + '/Datasets/extracted_rules.txt')
-        print('Rule Extraction Finished!')
+if __name__ == "__main__":
+    main()
