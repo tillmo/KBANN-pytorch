@@ -1,4 +1,1 @@
-# DeepLogicLearning
-Extracting Logical Rules From Neural Networks
-
-Implementation of Knowledge base artificial neural network
+Transfer of the KBANN implementation from [DeepLogicLearning](https://github.com/spacewalk01/deep-logic-learning) replacing tensorflow with pytorch and some clean-up.
