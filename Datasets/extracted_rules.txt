@@ -1,0 +1,6 @@
+'has_superviser :- 3.2035566048410704 < -1.2527460308836798 * nt(complete_course,freshman) + 2.9180604941766086 * nt(grad_student) + 0.8074953394784553 * nt(sent_application) + 0.610852174584854 * nt(high_gpa)'
+'take_course :- 3.2245521353692603 < 0.8378905615813245 * nt(sent_application) + -1.3057034267271919 * nt(complete_course,freshman) + 2.914371223330303 * nt(grad_student) + 0.6162366804640572 * nt(high_gpa)'
+'head1 :- 0.06648712559305721 < 0.026526031500678324 * nt(grad_student) + -0.10995099633451666 * nt(sent_application) + 0.15844124322176145 * nt(complete_course,freshman) + -0.14688765848376953 * nt(high_gpa)'
+'head2 :- 0.06652154746078469 < -0.12102718276886153 * nt(sent_application) + 0.1315343456485391 * nt(complete_course,freshman) + 0.07691481045220684 * nt(grad_student) + -0.07753788449498676 * nt(high_gpa)'
+'head3 :- 0.07021877710648236 < -0.06915488640860304 * nt(high_gpa) + 0.14412163375561907 * nt(complete_course,freshman) + 0.005416185459390622 * nt(grad_student) + -0.08428198955958663 * nt(sent_application)'
+'scholarship_candidate :- 6.552510288898731 < -0.279373323888654 * nt(head1,head2) + 3.922737869126237 * nt(has_superviser) + -0.22416278875385465 * nt(head3) + 3.981809932640711 * nt(take_course)'
