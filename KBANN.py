@@ -506,9 +506,8 @@ def display(arrays):
     for array in arrays:
         print(array)
 
-def train_model(model, X, y, training_epochs):
-    criterion = nn.BCELoss()
-    optimizer = pt.optim.SGD(model.parameters(), lr=0.1)
+def train_model(model, X, y, training_epochs, optimizer, criterion):
+
 
     # Refine rules
     for epoch in range(training_epochs):
@@ -519,19 +518,9 @@ def train_model(model, X, y, training_epochs):
         optimizer.step()
         print('Epoch %d: Loss = %.9f' % (epoch, l))
 
-
-def main():
-    CURRENT_DIRECTOR = os.getcwd()
-
-    # Initial parameters
-    training_epochs = 2000
-
-    # Load training data
-    data_file_path = CURRENT_DIRECTOR + '/Datasets/student.txt'
-    X, y, feature_names = load_data(data_file_path)
-
+def main(X, y, feature_names, training_epochs, rule_file_path, atoms_to_add, ):
     # Translate rules to a network
-    rule_file_path = CURRENT_DIRECTOR + '/Datasets/student_rules.txt'
+
     ruleset = load_rules(rule_file_path)
     ruleset = rewrite_rules(ruleset)
     weights, biases, layers = rule_to_network(ruleset)
@@ -540,7 +529,7 @@ def main():
     print('---------------------')
     # Add input features not referred by the rule set
     #weights, layers = add_input_units(weights, layers, ['complete_course'])
-    weights, layers = add_input_units(weights, layers, ['complete_course', 'freshman', 'sent_application', 'high_gpa'])
+    weights, layers = add_input_units(weights, layers, atoms_to_add)
 
     # Add hidden units not specified by the initial rule set
     weights, biases, layers = add_hidden_units(weights, biases, layers)
@@ -556,22 +545,33 @@ def main():
 
     # Construct a training model
     model = KBANN(list(map(pt.tensor, weights)), list(map(pt.tensor, biases)))
-    train_model(model, X, y, training_epochs)
+
+    criterion = nn.MSELoss()
+    optimizer = pt.optim.Adam(model.parameters(), lr=0.1)
+
+    train_model(model, X, y, training_epochs, optimizer, criterion)
 
     weights, biases, cluster_indices = eliminate_weights(model.weights, model.biases)
 
     # Create second model with fixed weights - train just biases
     model = KBANN(list(map(pt.tensor, weights)), list(map(pt.tensor, biases)), fix_weights=True)
-    train_model(model, X, y, training_epochs)
+    train_model(model, X, y, training_epochs, optimizer, criterion)
 
     # Translate network to rules
     ruleset = network_to_rule(weights, biases, cluster_indices, layers)
     print('Parameters 4:')
     display(weights)
     display(biases)
-
-    save(ruleset, CURRENT_DIRECTOR + '/Datasets/extracted_rules.txt')
     print('Rule Extraction Finished!')
 
 if __name__ == "__main__":
-    main()
+    CURRENT_DIRECTOR = os.getcwd()
+
+    # Initial parameters
+    training_epochs = 2000
+
+    atoms_to_add = ['complete_course', 'freshman', 'sent_application', 'high_gpa']
+    # Load training data
+    data_file_path = os.path.join(CURRENT_DIRECTOR, "Datasets", "student.txt")
+    X, y, feature_names = load_data(data_file_path)
+    main(X, y, feature_names, training_epochs, os.path.join(CURRENT_DIRECTOR, "Datasets","student_rules.txt"), atoms_to_add)
