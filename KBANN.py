@@ -6,6 +6,7 @@ from torch import nn
 
 DEFAULT_WEIGHT = 4.0
 
+
 def cluster_weights(links, threshold):
     """Cluster weights (links) using Gaussian mixture model with EM.
 
@@ -30,7 +31,9 @@ def cluster_weights(links, threshold):
         lowest_bic = np.infty
         bic = []
         for n_components in range(2, n):
-            gmm = mixture.GaussianMixture(n_components=n_components, covariance_type='full')
+            gmm = mixture.GaussianMixture(
+                n_components=n_components, covariance_type="full"
+            )
             gmm.fit(weights)
             # Bayesian information criterion
             bic.append(gmm.bic(weights))
@@ -53,6 +56,7 @@ def cluster_weights(links, threshold):
     else:
         return links, np.zeros(len(links))
 
+
 def load_data(filename):
     """Read features and training samples from dataset
 
@@ -63,12 +67,14 @@ def load_data(filename):
         X: Training data
         feature_names: a list of feature names
     """
-    file = open(filename, 'rt', encoding='UTF8')
+    file = open(filename, "rt", encoding="UTF8")
 
-    features = []; X = []; y = []
+    features = []
+    X = []
+    y = []
     for line in file:
-        line = line.replace('\n', '')
-        row = [s.strip() for s in line.split(',')]
+        line = line.replace("\n", "")
+        row = [s.strip() for s in line.split(",")]
         if not features:
             # The first line is a list of feature names
             features = row
@@ -81,6 +87,7 @@ def load_data(filename):
 
     return np.array(X), np.transpose(np.array([y])), features
 
+
 class Literal:
     """Literal object
 
@@ -88,9 +95,11 @@ class Literal:
         name: the name of predicate
         negated: indicates whether the predicate is negated.
     """
+
     def __init__(self, name, negated=False):
         self.name = name
         self.negated = negated
+
 
 class Rule:
     """First order rule
@@ -99,9 +108,11 @@ class Rule:
         head: the consequent of the rule
         body: the antecedents of the rule
     """
+
     def __init__(self, head, body):
         self.head = head
         self.body = body
+
 
 def load_rules(filename):
     """Load rules from a file
@@ -115,32 +126,33 @@ def load_rules(filename):
     Returns:
         A list of rules
     """
+
     def cleanse(str):
-        """Sanitize a string rule and remove stopwords
-        """
-        rep = ['\n', '-', ' ', '.']
+        """Sanitize a string rule and remove stopwords"""
+        rep = ["\n", "-", " ", "."]
         for r in rep:
-            str = str.replace(r, '')
+            str = str.replace(r, "")
         return str
 
-    file = open(filename, 'rt', encoding='UTF8')
+    file = open(filename, "rt", encoding="UTF8")
     ruleset = []
     for line in file:
-        tokens = line.split(':')
+        tokens = line.split(":")
         head = Literal(cleanse(tokens[0]))
         body = []
-        for obj in tokens[1].split(','):
+        for obj in tokens[1].split(","):
             obj = cleanse(obj)
             negated = False
-            if obj.startswith('not'):
+            if obj.startswith("not"):
                 negated = True
-                obj = obj.replace('not', '')
+                obj = obj.replace("not", "")
             predicate = Literal(cleanse(obj), negated=negated)
             body.append(predicate)
         rule = Rule(head, body)
         ruleset.append(rule)
     file.close()
     return ruleset
+
 
 def rewrite_rules(ruleset):
     """Scan every rule and rewrite the ones with the same consequents
@@ -187,6 +199,7 @@ def rewrite_rules(ruleset):
 
     return ruleset + rewritten_rules
 
+
 def get_antecedents(rules):
     """Retrieve all the antecedents from a set of rules
 
@@ -205,6 +218,7 @@ def get_antecedents(rules):
                 all_antecedents.append(predicate.name)
     return all_antecedents
 
+
 def get_consequents(rules):
     """Retrieve all the consequents from a set of rules
 
@@ -221,6 +235,7 @@ def get_consequents(rules):
         if rule.head.name not in all_consequents:
             all_consequents.append(rule.head.name)
     return all_consequents
+
 
 def rule_to_network(ruleset):
     """Translating rules to network (Towell's mapping algorithm)
@@ -313,10 +328,13 @@ def rule_to_network(ruleset):
 
     return weights, biases, layers
 
+
 def preprocess_data(dataset, feature_names, layers):
     """Preprocessing input data"""
 
-    last_layer = []; X = []; i = 1
+    last_layer = []
+    X = []
+    i = 1
     for layer in layers:
         indices = []
         if i == 1:
@@ -338,6 +356,7 @@ def preprocess_data(dataset, feature_names, layers):
 
     return X
 
+
 def eliminate_weights(weights, biases):
     """Eliminate weights that are not contributing to the output"""
     cluster_ids = []
@@ -351,6 +370,7 @@ def eliminate_weights(weights, biases):
         cluster_ids.append(cluster)
 
     return weights, biases, cluster_ids
+
 
 def network_to_rule(weights, biases, cluster_indices, layers):
     """Translate network to rule.
@@ -380,21 +400,22 @@ def network_to_rule(weights, biases, cluster_indices, layers):
             head = next_layer[j]
             indices = cluster_indices[i][j]
             unique_ids = list(set(indices))
-            body = ''
+            body = ""
             for id in unique_ids:
-                if body != '':
-                    body += ' + '
+                if body != "":
+                    body += " + "
                 matched_indices = indices == id
                 antecedents = current_layer[matched_indices]
                 threshold = w[matched_indices]
-                body += str(threshold[0]) + ' * nt(' + ','.join(antecedents) + ')'
-            new_rule = head + ' :- ' + str(b) + ' < ' + body
+                body += str(threshold[0]) + " * nt(" + ",".join(antecedents) + ")"
+            new_rule = head + " :- " + str(b) + " < " + body
             rules.append(new_rule)
 
-            print(head + ' = 0')
-            print('if ' + str(b) + ' < ' + body + ':')
-            print('\t' + head + ' = 1')
+            print(head + " = 0")
+            print("if " + str(b) + " < " + body + ":")
+            print("\t" + head + " = 1")
     return rules
+
 
 def add_input_units(weights, layers, feature_names):
     """Add input features not referred by the rule set
@@ -416,14 +437,11 @@ def add_input_units(weights, layers, feature_names):
     weights[0] = np.row_stack([w, zeros])
     layers[0] += additional_units
 
-
-
-
     return weights, layers
 
+
 def add_hidden_units(weights, biases, layers):
-    """Add units to hidden layers
-    """
+    """Add units to hidden layers"""
     w1 = weights[0]
     w2 = weights[1]
     zeros1 = np.zeros((w1.shape[0], 3))
@@ -434,24 +452,26 @@ def add_hidden_units(weights, biases, layers):
     b = biases[0]
     biases[0] = np.column_stack([b, np.zeros((1, 3))])
 
-    layers[1].insert(len(layers[1]), 'head1')
-    layers[1].insert(len(layers[1]), 'head2')
-    layers[1].insert(len(layers[1]), 'head3')
+    layers[1].insert(len(layers[1]), "head1")
+    layers[1].insert(len(layers[1]), "head2")
+    layers[1].insert(len(layers[1]), "head3")
 
-    layers[2].insert(len(layers[2]), 'head1')
-    layers[2].insert(len(layers[2]), 'head2')
-    layers[2].insert(len(layers[2]), 'head3')
+    layers[2].insert(len(layers[2]), "head1")
+    layers[2].insert(len(layers[2]), "head2")
+    layers[2].insert(len(layers[2]), "head3")
 
     return weights, biases, layers
+
 
 def simplify_rules(rules):
 
     return rules
 
+
 def save(rules, filepath):
-    with open(filepath, 'w') as f:
+    with open(filepath, "w") as f:
         for row in rules:
-            f.write(repr(str(row)) + '\n')
+            f.write(repr(str(row)) + "\n")
 
 
 class KBANN(nn.Module):
@@ -473,11 +493,23 @@ class KBANN(nn.Module):
         """Set network parameters"""
 
         super().__init__()
-        self.w = nn.ParameterList([nn.Parameter(w + 0.1 * pt.rand((len(w), len(w[0]))), requires_grad=not fix_weights) for w in weights])
-        self.b = nn.ParameterList([nn.Parameter(b + 0.1 * pt.rand((1, len(b))), requires_grad=True) for b in biases])
+        self.w = nn.ParameterList(
+            [
+                nn.Parameter(
+                    w + 0.1 * pt.rand((len(w), len(w[0]))),
+                    requires_grad=not fix_weights,
+                )
+                for w in weights
+            ]
+        )
+        self.b = nn.ParameterList(
+            [
+                nn.Parameter(b + 0.1 * pt.rand((1, len(b))), requires_grad=True)
+                for b in biases
+            ]
+        )
         self.num_layers = len(weights)
         self.dropout = nn.Dropout(p=0.1)
-
 
     def forward(self, input_data, input_mask=None, dropout=True):
         """Implements the forward propagation"""
@@ -485,7 +517,7 @@ class KBANN(nn.Module):
         activations = [pt.sigmoid(pt.matmul(input_data, self.w[0]) - self.b[0])]
         for i in range(1, self.num_layers):
             if input_mask and input_mask[i]:
-                input_tensor = pt.concat([activations[-1], input_data[i]],dim=1)
+                input_tensor = pt.concat([activations[-1], input_data[i]], dim=1)
             else:
                 input_tensor = activations[-1]
             if dropout:
@@ -502,12 +534,13 @@ class KBANN(nn.Module):
     def biases(self):
         return [b.detach().numpy() for b in self.b]
 
+
 def display(arrays):
     for array in arrays:
         print(array)
 
-def train_model(model, X, y, training_epochs, optimizer, criterion):
 
+def train_model(model, X, y, training_epochs, optimizer, criterion):
 
     # Refine rules
     for epoch in range(training_epochs):
@@ -516,9 +549,17 @@ def train_model(model, X, y, training_epochs, optimizer, criterion):
         l = criterion(pred, y)
         l.backward()
         optimizer.step()
-        print('Epoch %d: Loss = %.9f' % (epoch, l))
+        print("Epoch %d: Loss = %.9f" % (epoch, l))
 
-def main(X, y, feature_names, training_epochs, rule_file_path, atoms_to_add, ):
+
+def main(
+    X,
+    y,
+    feature_names,
+    training_epochs,
+    rule_file_path,
+    atoms_to_add,
+):
     # Translate rules to a network
 
     ruleset = load_rules(rule_file_path)
@@ -526,9 +567,9 @@ def main(X, y, feature_names, training_epochs, rule_file_path, atoms_to_add, ):
     weights, biases, layers = rule_to_network(ruleset)
 
     display(layers)
-    print('---------------------')
+    print("---------------------")
     # Add input features not referred by the rule set
-    #weights, layers = add_input_units(weights, layers, ['complete_course'])
+    # weights, layers = add_input_units(weights, layers, ['complete_course'])
     weights, layers = add_input_units(weights, layers, atoms_to_add)
 
     # Add hidden units not specified by the initial rule set
@@ -539,7 +580,7 @@ def main(X, y, feature_names, training_epochs, rule_file_path, atoms_to_add, ):
     X = pt.tensor(preprocess_data(X, feature_names, layers)[0])
     y = pt.tensor(y.astype(float))
 
-    print('Parameters 0:')
+    print("Parameters 0:")
     display(weights)
     display(biases)
 
@@ -554,15 +595,18 @@ def main(X, y, feature_names, training_epochs, rule_file_path, atoms_to_add, ):
     weights, biases, cluster_indices = eliminate_weights(model.weights, model.biases)
 
     # Create second model with fixed weights - train just biases
-    model = KBANN(list(map(pt.tensor, weights)), list(map(pt.tensor, biases)), fix_weights=True)
+    model = KBANN(
+        list(map(pt.tensor, weights)), list(map(pt.tensor, biases)), fix_weights=True
+    )
     train_model(model, X, y, training_epochs, optimizer, criterion)
 
     # Translate network to rules
     ruleset = network_to_rule(weights, biases, cluster_indices, layers)
-    print('Parameters 4:')
+    print("Parameters 4:")
     display(weights)
     display(biases)
-    print('Rule Extraction Finished!')
+    print("Rule Extraction Finished!")
+
 
 if __name__ == "__main__":
     CURRENT_DIRECTOR = os.getcwd()
@@ -570,8 +614,15 @@ if __name__ == "__main__":
     # Initial parameters
     training_epochs = 2000
 
-    atoms_to_add = ['complete_course', 'freshman', 'sent_application', 'high_gpa']
+    atoms_to_add = ["complete_course", "freshman", "sent_application", "high_gpa"]
     # Load training data
     data_file_path = os.path.join(CURRENT_DIRECTOR, "Datasets", "student.txt")
     X, y, feature_names = load_data(data_file_path)
-    main(X, y, feature_names, training_epochs, os.path.join(CURRENT_DIRECTOR, "Datasets","student_rules.txt"), atoms_to_add)
+    main(
+        X,
+        y,
+        feature_names,
+        training_epochs,
+        os.path.join(CURRENT_DIRECTOR, "Datasets", "student_rules.txt"),
+        atoms_to_add,
+    )
