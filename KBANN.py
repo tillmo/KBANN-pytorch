@@ -388,11 +388,13 @@ def network_to_rule(weights, biases, cluster_indices, layers):
     """
 
     rules = []
-    layers = np.array(layers)
+    # Don't convert layers to numpy array
+    # layers = np.array(layers)
+    
     weight_range = range(0, len(weights))
     layer_range = range(0, len(layers), 2)
     for i, l in zip(weight_range, layer_range):
-        current_layer = np.array(layers[l])
+        current_layer = layers[l]  # Access as a list, not numpy array
         next_layer = layers[l + 1]
         for j in range(weights[i].shape[1]):
             b = biases[i][0, j]
@@ -405,9 +407,17 @@ def network_to_rule(weights, biases, cluster_indices, layers):
                 if body != "":
                     body += " + "
                 matched_indices = indices == id
-                antecedents = current_layer[matched_indices]
-                threshold = w[matched_indices]
-                body += str(threshold[0]) + " * nt(" + ",".join(antecedents) + ")"
+                # Get antecedents from the current layer using list comprehension
+                antecedents = [current_layer[idx] for idx, is_match in enumerate(matched_indices) if is_match]
+                
+                # Extract corresponding thresholds using the same indices
+                threshold_values = [w[idx] for idx, is_match in enumerate(matched_indices) if is_match]
+                if threshold_values:
+                    threshold = threshold_values[0]
+                else:
+                    threshold = 0  # Default if no matches
+                    
+                body += str(threshold) + " * nt(" + ",".join(antecedents) + ")"
             new_rule = head + " :- " + str(b) + " < " + body
             rules.append(new_rule)
 
